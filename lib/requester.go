@@ -6,6 +6,9 @@ import (
 	"math/rand"
 	"net/http"
 	"time"
+	"net"
+	"context"
+	"strings"
 )
 
 const (
@@ -17,26 +20,45 @@ const (
 // Requester performs HTTP requests at a pre-defined interval and logs error or slow
 // response. It also writes the result in a channel for statistics
 type Requester struct {
-	stopCh    chan struct{}
-	interval  int
-	timeout   int
-	url       string
-	measureCh chan int64
+	stopCh     chan struct{}
+	interval   int
+	timeout    int
+	url        string
+	measureCh  chan int64
+	resolve    string
+	hostHeader string
 }
 
-func NewRequester(interval int, timeout int, url string, measureCh chan int64) *Requester {
+func NewRequester(interval int, timeout int, url string, resolve string, measureCh chan int64) *Requester {
 	return &Requester{
 		stopCh:    make(chan struct{}),
 		interval:  interval,
 		timeout:   timeout,
 		url:       url,
 		measureCh: measureCh,
+		resolve:   resolve,
 	}
 }
 
 func (c *Requester) Run() {
 	ticker := time.NewTicker(time.Duration(c.interval) * time.Microsecond)
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+		DualStack: true,
+	}
+	if len(c.resolve) > 0 {
+		pieces := strings.Split(c.resolve, ":")
 
+		// or create your own transport, there's an example on godoc.
+		http.DefaultTransport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			fmt.Println("address original =", c.resolve)
+			addr = fmt.Sprintf("%s:%s", pieces[2], pieces[1])
+			fmt.Println("address modified =", addr)
+			c.hostHeader = pieces[0]
+			return dialer.DialContext(ctx, network, addr)
+		}
+	}
 	for {
 		select {
 		case <-ticker.C:
@@ -49,7 +71,16 @@ func (c *Requester) Run() {
 
 			// Fire the request
 			requestStart := time.Now()
-			response, err := client.Get(urlWithID)
+			req, err := http.NewRequest("GET", urlWithID, nil)
+			if err != nil {
+				panic(err)
+			}
+			if len(c.hostHeader) > 0{
+				req.Header = map[string][]string{
+					"Host": {c.hostHeader},
+				}
+			}
+			response, err := client.Do(req)
 
 			// Mesure time spent
 			elapsed := time.Since(requestStart)

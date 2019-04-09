@@ -14,6 +14,7 @@ import (
 
 var opts struct {
 	URL           string `env:"URL" required:"true" short:"u" long:"url" description:"URL to connect to"`
+	Resolve       string `env:"RESOLVE" required:"false" short:"r" long:"resolve" description:"URL resolver like curl --resolve hostname:port:ipaddress"`
 	Concurrency   int    `env:"CONCURRENCY" short:"c" long:"concurrency" description:"Number of parallel requests" default:"25"`
 	Interval      int    `env:"INTERVAL" short:"i" long:"interval" description:"Interval between two requests, in us" default:"100000"`
 	Timeout       int    `env:"TIMEOUT" short:"t" long:"timeout" description:"Timeout for requests, in ms" default:"500"`
@@ -41,7 +42,8 @@ func main() {
 	log.Printf("Preparing %d requesters with a %d us interval on %s", opts.Concurrency, opts.Interval, opts.URL)
 	requesters := []*lib.Requester{}
 	for i := 0; i < opts.Concurrency; i++ {
-		requesters = append(requesters, lib.NewRequester(opts.Interval, opts.Timeout, opts.URL, measureCh))
+		req := lib.NewRequester(opts.Interval, opts.Timeout, opts.URL, opts.Resolve,measureCh)
+		requesters = append(requesters,req)
 	}
 
 	log.Println("Starting requesters")
